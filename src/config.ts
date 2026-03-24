@@ -1,0 +1,14 @@
+import dotenv from "dotenv";
+
+const envFile = `.env${process.env.NODE_ENV ? `.${process.env.NODE_ENV}` : ""}`;
+dotenv.config({ override: true, path: envFile });
+
+export default {
+  nodeEnv: process.env.NODE_ENV || "development",
+  port: process.env.PORT || "5001",
+  databaseUrl: process.env.DATABASE_URL!,
+  betterAuth: {
+    url: process.env.BETTER_AUTH_URL || `http://localhost:${process.env.PORT || "5001"}`,
+    secret: process.env.BETTER_AUTH_SECRET!
+  }
+};
