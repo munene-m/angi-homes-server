@@ -1,7 +1,7 @@
 import { and, desc, eq, ilike, or } from "drizzle-orm";
 import { Elysia, t } from "elysia";
 import { db } from "../db/drizzle";
-import { residents } from "../db/schema";
+import { residentAdmissions, residentContacts, residents } from "../db/schema";
 import { requirePermission } from "../lib/access-control";
 
 const residentBaseSchema = t.Object({
@@ -39,12 +39,113 @@ const residentParamsSchema = t.Object({
   id: t.String({ format: "uuid" }),
 });
 
+const residentContactParamsSchema = t.Object({
+  id: t.String({ format: "uuid" }),
+  contactId: t.String({ format: "uuid" }),
+});
+
+const residentAdmissionParamsSchema = t.Object({
+  id: t.String({ format: "uuid" }),
+  admissionId: t.String({ format: "uuid" }),
+});
+
 const listResidentsQuerySchema = t.Object({
   q: t.Optional(t.String()),
   status: t.Optional(
     t.UnionEnum(["pending", "active", "discharged", "deceased"] as const),
   ),
   includeArchived: t.Optional(t.Boolean()),
+});
+
+const residentContactTypeSchema = t.UnionEnum(
+  ["next_of_kin", "guardian", "family", "emergency", "other"] as const,
+);
+const residentAdmissionStatusSchema = t.UnionEnum(
+  ["planned", "admitted", "discharged", "cancelled"] as const,
+);
+
+const residentContactSchema = t.Object({
+  id: t.String({ format: "uuid" }),
+  residentId: t.String({ format: "uuid" }),
+  type: residentContactTypeSchema,
+  fullName: t.String(),
+  relationship: t.Nullable(t.String()),
+  phoneNumber: t.Nullable(t.String()),
+  alternatePhoneNumber: t.Nullable(t.String()),
+  email: t.Nullable(t.String()),
+  address: t.Nullable(t.String()),
+  isPrimary: t.Boolean(),
+  canReceiveUpdates: t.Boolean(),
+  notes: t.Nullable(t.String()),
+  createdAt: t.Date(),
+  updatedAt: t.Date(),
+});
+
+const createResidentContactSchema = t.Object({
+  type: t.Optional(residentContactTypeSchema),
+  fullName: t.String({ minLength: 1, maxLength: 160 }),
+  relationship: t.Optional(t.String({ minLength: 1, maxLength: 120 })),
+  phoneNumber: t.Optional(t.String({ minLength: 1, maxLength: 40 })),
+  alternatePhoneNumber: t.Optional(t.String({ minLength: 1, maxLength: 40 })),
+  email: t.Optional(t.String({ format: "email" })),
+  address: t.Optional(t.String()),
+  isPrimary: t.Optional(t.Boolean()),
+  canReceiveUpdates: t.Optional(t.Boolean()),
+  notes: t.Optional(t.String()),
+});
+
+const updateResidentContactSchema = t.Object({
+  type: t.Optional(residentContactTypeSchema),
+  fullName: t.Optional(t.String({ minLength: 1, maxLength: 160 })),
+  relationship: t.Optional(t.String({ minLength: 1, maxLength: 120 })),
+  phoneNumber: t.Optional(t.String({ minLength: 1, maxLength: 40 })),
+  alternatePhoneNumber: t.Optional(t.String({ minLength: 1, maxLength: 40 })),
+  email: t.Optional(t.String({ format: "email" })),
+  address: t.Optional(t.String()),
+  isPrimary: t.Optional(t.Boolean()),
+  canReceiveUpdates: t.Optional(t.Boolean()),
+  notes: t.Optional(t.String()),
+});
+
+const residentAdmissionSchema = t.Object({
+  id: t.String({ format: "uuid" }),
+  residentId: t.String({ format: "uuid" }),
+  admissionDate: t.Date(),
+  dischargeDate: t.Union([t.Date(), t.Null()]),
+  status: residentAdmissionStatusSchema,
+  source: t.Nullable(t.String()),
+  reason: t.Nullable(t.String()),
+  careLevel: t.Nullable(t.String()),
+  physicianName: t.Nullable(t.String()),
+  dischargeReason: t.Nullable(t.String()),
+  dischargeNotes: t.Nullable(t.String()),
+  admittedBy: t.Nullable(t.String()),
+  createdAt: t.Date(),
+  updatedAt: t.Date(),
+});
+
+const createResidentAdmissionSchema = t.Object({
+  admissionDate: t.String({ format: "date-time" }),
+  dischargeDate: t.Optional(t.String({ format: "date-time" })),
+  status: t.Optional(residentAdmissionStatusSchema),
+  source: t.Optional(t.String({ minLength: 1, maxLength: 120 })),
+  reason: t.Optional(t.String()),
+  careLevel: t.Optional(t.String({ minLength: 1, maxLength: 120 })),
+  physicianName: t.Optional(t.String({ minLength: 1, maxLength: 160 })),
+  dischargeReason: t.Optional(t.String()),
+  dischargeNotes: t.Optional(t.String()),
+});
+
+const updateResidentAdmissionSchema = t.Object({
+  admissionDate: t.Optional(t.String({ format: "date-time" })),
+  dischargeDate: t.Optional(t.String({ format: "date-time" })),
+  status: t.Optional(residentAdmissionStatusSchema),
+  source: t.Optional(t.String({ minLength: 1, maxLength: 120 })),
+  reason: t.Optional(t.String()),
+  careLevel: t.Optional(t.String({ minLength: 1, maxLength: 120 })),
+  physicianName: t.Optional(t.String({ minLength: 1, maxLength: 160 })),
+  dischargeReason: t.Optional(t.String()),
+  dischargeNotes: t.Optional(t.String()),
 });
 
 const residentListResponseSchema = t.Object({
@@ -129,6 +230,22 @@ const messageResponseSchema = t.Object({
 const validationErrorResponseSchema = t.Object({
   message: t.String(),
   issues: t.Any(),
+});
+
+const residentContactListResponseSchema = t.Object({
+  data: t.Array(residentContactSchema),
+});
+
+const residentContactRecordResponseSchema = t.Object({
+  data: residentContactSchema,
+});
+
+const residentAdmissionListResponseSchema = t.Object({
+  data: t.Array(residentAdmissionSchema),
+});
+
+const residentAdmissionRecordResponseSchema = t.Object({
+  data: residentAdmissionSchema,
 });
 
 const serializeResident = async (residentId: string) => {
@@ -424,6 +541,493 @@ export const residentsApp = new Elysia({ prefix: "/api/admin/residents" })
       detail: {
         tags: ["Residents"],
         summary: "Archive resident",
+      },
+      response: {
+        200: messageResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .get(
+    "/:id/contacts",
+    async ({ params, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.read");
+        const resident = await db.query.residents.findFirst({
+          where: eq(residents.id, params.id),
+        });
+
+        if (!resident) {
+          set.status = 404;
+          return { message: "Resident not found" };
+        }
+
+        const data = await db.query.residentContacts.findMany({
+          where: eq(residentContacts.residentId, params.id),
+          orderBy: [desc(residentContacts.createdAt)],
+        });
+
+        return { data };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+
+        set.status = 403;
+        return { message: "Insufficient permissions" };
+      }
+    },
+    {
+      params: residentParamsSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "List resident contacts",
+      },
+      response: {
+        200: residentContactListResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/:id/contacts",
+    async ({ params, body, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.update");
+        const resident = await db.query.residents.findFirst({
+          where: eq(residents.id, params.id),
+        });
+
+        if (!resident) {
+          set.status = 404;
+          return { message: "Resident not found" };
+        }
+
+        const [created] = await db
+          .insert(residentContacts)
+          .values({
+            residentId: params.id,
+            type: body.type ?? "family",
+            fullName: body.fullName,
+            relationship: body.relationship,
+            phoneNumber: body.phoneNumber,
+            alternatePhoneNumber: body.alternatePhoneNumber,
+            email: body.email,
+            address: body.address,
+            isPrimary: body.isPrimary ?? false,
+            canReceiveUpdates: body.canReceiveUpdates ?? true,
+            notes: body.notes,
+          })
+          .returning();
+
+        set.status = 201;
+        return { data: created };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+
+        set.status = 500;
+        return {
+          message: error instanceof Error ? error.message : "Failed to create resident contact",
+        };
+      }
+    },
+    {
+      params: residentParamsSchema,
+      body: createResidentContactSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Create resident contact",
+      },
+      response: {
+        201: residentContactRecordResponseSchema,
+        400: validationErrorResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .patch(
+    "/:id/contacts/:contactId",
+    async ({ params, body, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.update");
+        const existing = await db.query.residentContacts.findFirst({
+          where: and(
+            eq(residentContacts.id, params.contactId),
+            eq(residentContacts.residentId, params.id),
+          ),
+        });
+
+        if (!existing) {
+          set.status = 404;
+          return { message: "Resident contact not found" };
+        }
+
+        await db
+          .update(residentContacts)
+          .set({
+            type: body.type ?? existing.type,
+            fullName: body.fullName ?? existing.fullName,
+            relationship: body.relationship ?? existing.relationship,
+            phoneNumber: body.phoneNumber ?? existing.phoneNumber,
+            alternatePhoneNumber:
+              body.alternatePhoneNumber ?? existing.alternatePhoneNumber,
+            email: body.email ?? existing.email,
+            address: body.address ?? existing.address,
+            isPrimary: body.isPrimary ?? existing.isPrimary,
+            canReceiveUpdates:
+              body.canReceiveUpdates ?? existing.canReceiveUpdates,
+            notes: body.notes ?? existing.notes,
+            updatedAt: new Date(),
+          })
+          .where(eq(residentContacts.id, params.contactId));
+
+        const updated = await db.query.residentContacts.findFirst({
+          where: eq(residentContacts.id, params.contactId),
+        });
+
+        if (!updated) {
+          set.status = 500;
+          return { message: "Failed to load updated resident contact" };
+        }
+
+        return { data: updated };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+
+        set.status = 500;
+        return {
+          message: error instanceof Error ? error.message : "Failed to update resident contact",
+        };
+      }
+    },
+    {
+      params: residentContactParamsSchema,
+      body: updateResidentContactSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Update resident contact",
+      },
+      response: {
+        200: residentContactRecordResponseSchema,
+        400: validationErrorResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .delete(
+    "/:id/contacts/:contactId",
+    async ({ params, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.update");
+        const existing = await db.query.residentContacts.findFirst({
+          where: and(
+            eq(residentContacts.id, params.contactId),
+            eq(residentContacts.residentId, params.id),
+          ),
+        });
+
+        if (!existing) {
+          set.status = 404;
+          return { message: "Resident contact not found" };
+        }
+
+        await db.delete(residentContacts).where(eq(residentContacts.id, params.contactId));
+
+        return { message: "Resident contact deleted successfully" };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+
+        set.status = 500;
+        return {
+          message: error instanceof Error ? error.message : "Failed to delete resident contact",
+        };
+      }
+    },
+    {
+      params: residentContactParamsSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Delete resident contact",
+      },
+      response: {
+        200: messageResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .get(
+    "/:id/admissions",
+    async ({ params, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.read");
+        const resident = await db.query.residents.findFirst({
+          where: eq(residents.id, params.id),
+        });
+
+        if (!resident) {
+          set.status = 404;
+          return { message: "Resident not found" };
+        }
+
+        const data = await db.query.residentAdmissions.findMany({
+          where: eq(residentAdmissions.residentId, params.id),
+          orderBy: [desc(residentAdmissions.admissionDate)],
+        });
+
+        return { data };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+
+        set.status = 403;
+        return { message: "Insufficient permissions" };
+      }
+    },
+    {
+      params: residentParamsSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "List resident admissions",
+      },
+      response: {
+        200: residentAdmissionListResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/:id/admissions",
+    async ({ params, body, request, set }) => {
+      try {
+        const authContext = await requirePermission(request.headers, "residents.update");
+        const resident = await db.query.residents.findFirst({
+          where: eq(residents.id, params.id),
+        });
+
+        if (!resident) {
+          set.status = 404;
+          return { message: "Resident not found" };
+        }
+
+        const [created] = await db
+          .insert(residentAdmissions)
+          .values({
+            residentId: params.id,
+            admissionDate: new Date(body.admissionDate),
+            dischargeDate: body.dischargeDate ? new Date(body.dischargeDate) : null,
+            status: body.status ?? "planned",
+            source: body.source,
+            reason: body.reason,
+            careLevel: body.careLevel,
+            physicianName: body.physicianName,
+            dischargeReason: body.dischargeReason,
+            dischargeNotes: body.dischargeNotes,
+            admittedBy: authContext.user.id,
+          })
+          .returning();
+
+        set.status = 201;
+        return { data: created };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+
+        set.status = 500;
+        return {
+          message: error instanceof Error ? error.message : "Failed to create resident admission",
+        };
+      }
+    },
+    {
+      params: residentParamsSchema,
+      body: createResidentAdmissionSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Create resident admission",
+      },
+      response: {
+        201: residentAdmissionRecordResponseSchema,
+        400: validationErrorResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .patch(
+    "/:id/admissions/:admissionId",
+    async ({ params, body, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.update");
+        const existing = await db.query.residentAdmissions.findFirst({
+          where: and(
+            eq(residentAdmissions.id, params.admissionId),
+            eq(residentAdmissions.residentId, params.id),
+          ),
+        });
+
+        if (!existing) {
+          set.status = 404;
+          return { message: "Resident admission not found" };
+        }
+
+        await db
+          .update(residentAdmissions)
+          .set({
+            admissionDate: body.admissionDate
+              ? new Date(body.admissionDate)
+              : existing.admissionDate,
+            dischargeDate: body.dischargeDate
+              ? new Date(body.dischargeDate)
+              : existing.dischargeDate,
+            status: body.status ?? existing.status,
+            source: body.source ?? existing.source,
+            reason: body.reason ?? existing.reason,
+            careLevel: body.careLevel ?? existing.careLevel,
+            physicianName: body.physicianName ?? existing.physicianName,
+            dischargeReason: body.dischargeReason ?? existing.dischargeReason,
+            dischargeNotes: body.dischargeNotes ?? existing.dischargeNotes,
+            updatedAt: new Date(),
+          })
+          .where(eq(residentAdmissions.id, params.admissionId));
+
+        const updated = await db.query.residentAdmissions.findFirst({
+          where: eq(residentAdmissions.id, params.admissionId),
+        });
+
+        if (!updated) {
+          set.status = 500;
+          return { message: "Failed to load updated resident admission" };
+        }
+
+        return { data: updated };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+
+        set.status = 500;
+        return {
+          message: error instanceof Error ? error.message : "Failed to update resident admission",
+        };
+      }
+    },
+    {
+      params: residentAdmissionParamsSchema,
+      body: updateResidentAdmissionSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Update resident admission",
+      },
+      response: {
+        200: residentAdmissionRecordResponseSchema,
+        400: validationErrorResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .delete(
+    "/:id/admissions/:admissionId",
+    async ({ params, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.update");
+        const existing = await db.query.residentAdmissions.findFirst({
+          where: and(
+            eq(residentAdmissions.id, params.admissionId),
+            eq(residentAdmissions.residentId, params.id),
+          ),
+        });
+
+        if (!existing) {
+          set.status = 404;
+          return { message: "Resident admission not found" };
+        }
+
+        await db.delete(residentAdmissions).where(eq(residentAdmissions.id, params.admissionId));
+
+        return { message: "Resident admission deleted successfully" };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+
+        set.status = 500;
+        return {
+          message: error instanceof Error ? error.message : "Failed to delete resident admission",
+        };
+      }
+    },
+    {
+      params: residentAdmissionParamsSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Delete resident admission",
       },
       response: {
         200: messageResponseSchema,

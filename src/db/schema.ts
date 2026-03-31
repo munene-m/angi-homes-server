@@ -73,6 +73,32 @@ export const documentTypeEnum = pgEnum("resident_document_type", [
   "consent",
   "other",
 ]);
+export const shiftStatusEnum = pgEnum("staff_shift_status", [
+  "scheduled",
+  "completed",
+  "missed",
+  "cancelled",
+]);
+export const performanceRatingEnum = pgEnum("staff_performance_rating", [
+  "poor",
+  "fair",
+  "good",
+  "very_good",
+  "excellent",
+]);
+export const appointmentStatusEnum = pgEnum("appointment_status", [
+  "scheduled",
+  "completed",
+  "cancelled",
+  "missed",
+]);
+export const visitStatusEnum = pgEnum("visit_status", [
+  "scheduled",
+  "checked_in",
+  "completed",
+  "cancelled",
+  "no_show",
+]);
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -472,6 +498,136 @@ export const residentDocuments = pgTable(
   ],
 );
 
+export const staffShifts = pgTable(
+  "staff_shifts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    staffUserId: text("staff_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    shiftDate: date("shift_date").notNull(),
+    startTime: varchar("start_time", { length: 10 }).notNull(),
+    endTime: varchar("end_time", { length: 10 }).notNull(),
+    department: varchar("department", { length: 120 }),
+    roleLabel: varchar("role_label", { length: 120 }),
+    status: shiftStatusEnum("status").default("scheduled").notNull(),
+    notes: text("notes"),
+    assignedBy: text("assigned_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("staff_shifts_staff_user_id_idx").on(table.staffUserId),
+    index("staff_shifts_shift_date_idx").on(table.shiftDate),
+    index("staff_shifts_status_idx").on(table.status),
+  ],
+);
+
+export const staffPerformanceReviews = pgTable(
+  "staff_performance_reviews",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    staffUserId: text("staff_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    reviewerUserId: text("reviewer_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    reviewDate: date("review_date").notNull(),
+    rating: performanceRatingEnum("rating").notNull(),
+    strengths: text("strengths"),
+    improvements: text("improvements"),
+    summary: text("summary"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("staff_performance_reviews_staff_user_id_idx").on(table.staffUserId),
+    index("staff_performance_reviews_review_date_idx").on(table.reviewDate),
+  ],
+);
+
+export const appointments = pgTable(
+  "appointments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    residentId: uuid("resident_id")
+      .notNull()
+      .references(() => residents.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 160 }).notNull(),
+    appointmentType: varchar("appointment_type", { length: 120 }),
+    providerName: varchar("provider_name", { length: 160 }),
+    location: varchar("location", { length: 160 }),
+    scheduledAt: timestamp("scheduled_at").notNull(),
+    endsAt: timestamp("ends_at"),
+    status: appointmentStatusEnum("status").default("scheduled").notNull(),
+    notes: text("notes"),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: text("updated_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("appointments_resident_id_idx").on(table.residentId),
+    index("appointments_status_idx").on(table.status),
+    index("appointments_scheduled_at_idx").on(table.scheduledAt),
+  ],
+);
+
+export const visits = pgTable(
+  "visits",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    residentId: uuid("resident_id")
+      .notNull()
+      .references(() => residents.id, { onDelete: "cascade" }),
+    visitorName: varchar("visitor_name", { length: 160 }).notNull(),
+    relationship: varchar("relationship", { length: 120 }),
+    phoneNumber: varchar("phone_number", { length: 40 }),
+    email: varchar("email", { length: 255 }),
+    scheduledAt: timestamp("scheduled_at").notNull(),
+    checkInAt: timestamp("check_in_at"),
+    checkOutAt: timestamp("check_out_at"),
+    status: visitStatusEnum("status").default("scheduled").notNull(),
+    notes: text("notes"),
+    approvedBy: text("approved_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: text("updated_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("visits_resident_id_idx").on(table.residentId),
+    index("visits_status_idx").on(table.status),
+    index("visits_scheduled_at_idx").on(table.scheduledAt),
+  ],
+);
+
 export const userRelations = relations(user, ({ many, one }) => ({
   sessions: many(session),
   accounts: many(account),
@@ -494,6 +650,33 @@ export const userRelations = relations(user, ({ many, one }) => ({
   }),
   uploadedResidentDocuments: many(residentDocuments, {
     relationName: "resident_uploaded_by",
+  }),
+  staffShifts: many(staffShifts, {
+    relationName: "staff_shift_staff_user",
+  }),
+  assignedStaffShifts: many(staffShifts, {
+    relationName: "staff_shift_assigned_by",
+  }),
+  staffPerformanceReviews: many(staffPerformanceReviews, {
+    relationName: "staff_review_staff_user",
+  }),
+  authoredPerformanceReviews: many(staffPerformanceReviews, {
+    relationName: "staff_review_reviewer_user",
+  }),
+  createdAppointments: many(appointments, {
+    relationName: "appointment_created_by",
+  }),
+  updatedAppointments: many(appointments, {
+    relationName: "appointment_updated_by",
+  }),
+  approvedVisits: many(visits, {
+    relationName: "visit_approved_by",
+  }),
+  createdVisits: many(visits, {
+    relationName: "visit_created_by",
+  }),
+  updatedVisits: many(visits, {
+    relationName: "visit_updated_by",
   }),
 }));
 
@@ -558,6 +741,8 @@ export const residentRelations = relations(residents, ({ many, one }) => ({
     references: [residentMedicalProfiles.residentId],
   }),
   documents: many(residentDocuments),
+  appointments: many(appointments),
+  visits: many(visits),
   createdByUser: one(user, {
     relationName: "resident_created_by",
     fields: [residents.createdBy],
@@ -652,3 +837,71 @@ export const residentDocumentRelations = relations(
     }),
   }),
 );
+
+export const staffShiftRelations = relations(staffShifts, ({ one }) => ({
+  staffUser: one(user, {
+    relationName: "staff_shift_staff_user",
+    fields: [staffShifts.staffUserId],
+    references: [user.id],
+  }),
+  assignedByUser: one(user, {
+    relationName: "staff_shift_assigned_by",
+    fields: [staffShifts.assignedBy],
+    references: [user.id],
+  }),
+}));
+
+export const staffPerformanceReviewRelations = relations(
+  staffPerformanceReviews,
+  ({ one }) => ({
+    staffUser: one(user, {
+      relationName: "staff_review_staff_user",
+      fields: [staffPerformanceReviews.staffUserId],
+      references: [user.id],
+    }),
+    reviewerUser: one(user, {
+      relationName: "staff_review_reviewer_user",
+      fields: [staffPerformanceReviews.reviewerUserId],
+      references: [user.id],
+    }),
+  }),
+);
+
+export const appointmentRelations = relations(appointments, ({ one }) => ({
+  resident: one(residents, {
+    fields: [appointments.residentId],
+    references: [residents.id],
+  }),
+  createdByUser: one(user, {
+    relationName: "appointment_created_by",
+    fields: [appointments.createdBy],
+    references: [user.id],
+  }),
+  updatedByUser: one(user, {
+    relationName: "appointment_updated_by",
+    fields: [appointments.updatedBy],
+    references: [user.id],
+  }),
+}));
+
+export const visitRelations = relations(visits, ({ one }) => ({
+  resident: one(residents, {
+    fields: [visits.residentId],
+    references: [residents.id],
+  }),
+  approvedByUser: one(user, {
+    relationName: "visit_approved_by",
+    fields: [visits.approvedBy],
+    references: [user.id],
+  }),
+  createdByUser: one(user, {
+    relationName: "visit_created_by",
+    fields: [visits.createdBy],
+    references: [user.id],
+  }),
+  updatedByUser: one(user, {
+    relationName: "visit_updated_by",
+    fields: [visits.updatedBy],
+    references: [user.id],
+  }),
+}));

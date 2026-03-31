@@ -3,7 +3,9 @@ import config from "./config";
 import { drizzleConnect } from "./db/drizzle";
 import { ensureAccessControlSeed } from "./lib/access-control";
 import { auth } from "./lib/auth";
+import { appointmentsApp } from "./modules/appointments";
 import { residentsApp } from "./modules/residents";
+import { staffApp } from "./modules/staff";
 import { usersApp } from "./modules/users";
 import { fromTypes, openapi } from '@elysiajs/openapi';
 
@@ -27,6 +29,10 @@ const startServer = async () => {
       openapi({
         references: fromTypes(),
         path: '/docs',
+        specPath: '/docs/json',
+        scalar: {
+          url: '/docs/json',
+        },
         documentation: {
           info: {
             title: 'Angi Homes API',
@@ -39,6 +45,8 @@ const startServer = async () => {
     .all('/api/auth/*', betterAuthView)
     .use(usersApp)
     .use(residentsApp)
+    .use(staffApp)
+    .use(appointmentsApp)
     .listen(Number(config.port))
 
   console.log(`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`)

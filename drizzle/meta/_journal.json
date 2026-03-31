@@ -15,6 +15,20 @@
       "when": 1774297380303,
       "tag": "0001_sudden_wrecking_crew",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774977271394,
+      "tag": "0002_easy_rick_jones",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774979984127,
+      "tag": "0003_sticky_celestials",
+      "breakpoints": true
     }
   ]
 }
