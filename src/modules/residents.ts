@@ -1,11 +1,19 @@
 import { and, desc, eq, ilike, or } from "drizzle-orm";
 import { Elysia, t } from "elysia";
 import { db } from "../db/drizzle";
-import { residentAdmissions, residentContacts, residents } from "../db/schema";
+import {
+  beds,
+  residentAdmissions,
+  residentContacts,
+  residentMedicalProfiles,
+  residentRoomAllocations,
+  residents,
+  rooms,
+} from "../db/schema";
 import { requirePermission } from "../lib/access-control";
 
 const residentBaseSchema = t.Object({
-  residentNumber: t.String({ minLength: 1, maxLength: 60 }),
+  residentNumber: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
   firstName: t.String({ minLength: 1, maxLength: 120 }),
   lastName: t.String({ minLength: 1, maxLength: 120 }),
   preferredName: t.Optional(t.String({ maxLength: 120 })),
@@ -35,6 +43,66 @@ const residentBaseSchema = t.Object({
 const createResidentSchema = residentBaseSchema;
 const updateResidentSchema = t.Partial(residentBaseSchema);
 
+const generateResidentNumber = async () => {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const year = new Date().getFullYear().toString().slice(-2);
+    const randomChunk = Math.floor(Math.random() * 900000 + 100000).toString();
+    const candidate = `AHR-${year}${randomChunk}`;
+    const exists = await db.query.residents.findFirst({
+      where: eq(residents.residentNumber, candidate),
+      columns: {
+        id: true,
+      },
+    });
+
+    if (!exists) {
+      return candidate;
+    }
+  }
+
+  return `AHR-${crypto.randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
+};
+
+const generateRoomCode = async () => {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const year = new Date().getFullYear().toString().slice(-2);
+    const randomChunk = Math.floor(Math.random() * 9000 + 1000).toString();
+    const candidate = `RM-${year}${randomChunk}`;
+    const exists = await db.query.rooms.findFirst({
+      where: eq(rooms.code, candidate),
+      columns: {
+        id: true,
+      },
+    });
+
+    if (!exists) {
+      return candidate;
+    }
+  }
+
+  return `RM-${crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+};
+
+const generateBedCode = async () => {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const year = new Date().getFullYear().toString().slice(-2);
+    const randomChunk = Math.floor(Math.random() * 9000 + 1000).toString();
+    const candidate = `BD-${year}${randomChunk}`;
+    const exists = await db.query.beds.findFirst({
+      where: eq(beds.code, candidate),
+      columns: {
+        id: true,
+      },
+    });
+
+    if (!exists) {
+      return candidate;
+    }
+  }
+
+  return `BD-${crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+};
+
 const residentParamsSchema = t.Object({
   id: t.String({ format: "uuid" }),
 });
@@ -47,6 +115,16 @@ const residentContactParamsSchema = t.Object({
 const residentAdmissionParamsSchema = t.Object({
   id: t.String({ format: "uuid" }),
   admissionId: t.String({ format: "uuid" }),
+});
+const roomParamsSchema = t.Object({
+  roomId: t.String({ format: "uuid" }),
+});
+const bedParamsSchema = t.Object({
+  bedId: t.String({ format: "uuid" }),
+});
+const residentAllocationParamsSchema = t.Object({
+  id: t.String({ format: "uuid" }),
+  allocationId: t.String({ format: "uuid" }),
 });
 
 const listResidentsQuerySchema = t.Object({
@@ -62,6 +140,18 @@ const residentContactTypeSchema = t.UnionEnum(
 );
 const residentAdmissionStatusSchema = t.UnionEnum(
   ["planned", "admitted", "discharged", "cancelled"] as const,
+);
+const roomStatusSchema = t.UnionEnum(
+  ["available", "occupied", "maintenance", "inactive"] as const,
+);
+const bedStatusSchema = t.UnionEnum(
+  ["available", "occupied", "maintenance", "inactive"] as const,
+);
+const allocationStatusSchema = t.UnionEnum(
+  ["active", "transferred", "ended"] as const,
+);
+const mobilityStatusSchema = t.UnionEnum(
+  ["independent", "assisted", "wheelchair", "bedridden"] as const,
 );
 
 const residentContactSchema = t.Object({
@@ -146,6 +236,144 @@ const updateResidentAdmissionSchema = t.Object({
   physicianName: t.Optional(t.String({ minLength: 1, maxLength: 160 })),
   dischargeReason: t.Optional(t.String()),
   dischargeNotes: t.Optional(t.String()),
+});
+
+const roomSchema = t.Object({
+  id: t.String({ format: "uuid" }),
+  name: t.String(),
+  code: t.String(),
+  floor: t.Nullable(t.String()),
+  wing: t.Nullable(t.String()),
+  roomType: t.Nullable(t.String()),
+  status: roomStatusSchema,
+  capacity: t.Nullable(t.String()),
+  notes: t.Nullable(t.String()),
+  createdAt: t.Date(),
+  updatedAt: t.Date(),
+});
+
+const createRoomSchema = t.Object({
+  name: t.String({ minLength: 1, maxLength: 120 }),
+  code: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
+  floor: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
+  wing: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
+  roomType: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
+  status: t.Optional(roomStatusSchema),
+  capacity: t.Optional(t.String({ minLength: 1, maxLength: 20 })),
+  notes: t.Optional(t.String()),
+});
+
+const updateRoomSchema = t.Object({
+  name: t.Optional(t.String({ minLength: 1, maxLength: 120 })),
+  code: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
+  floor: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
+  wing: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
+  roomType: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
+  status: t.Optional(roomStatusSchema),
+  capacity: t.Optional(t.String({ minLength: 1, maxLength: 20 })),
+  notes: t.Optional(t.String()),
+});
+
+const bedSchema = t.Object({
+  id: t.String({ format: "uuid" }),
+  roomId: t.String({ format: "uuid" }),
+  name: t.String(),
+  code: t.String(),
+  status: bedStatusSchema,
+  notes: t.Nullable(t.String()),
+  createdAt: t.Date(),
+  updatedAt: t.Date(),
+});
+
+const createBedSchema = t.Object({
+  name: t.String({ minLength: 1, maxLength: 120 }),
+  code: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
+  status: t.Optional(bedStatusSchema),
+  notes: t.Optional(t.String()),
+});
+
+const updateBedSchema = t.Object({
+  name: t.Optional(t.String({ minLength: 1, maxLength: 120 })),
+  code: t.Optional(t.String({ minLength: 1, maxLength: 60 })),
+  status: t.Optional(bedStatusSchema),
+  notes: t.Optional(t.String()),
+});
+
+const residentAllocationSchema = t.Object({
+  id: t.String({ format: "uuid" }),
+  residentId: t.String({ format: "uuid" }),
+  roomId: t.String({ format: "uuid" }),
+  bedId: t.String({ format: "uuid" }),
+  allocationDate: t.Date(),
+  releaseDate: t.Union([t.Date(), t.Null()]),
+  status: allocationStatusSchema,
+  reason: t.Nullable(t.String()),
+  notes: t.Nullable(t.String()),
+  assignedBy: t.Nullable(t.String()),
+  createdAt: t.Date(),
+  updatedAt: t.Date(),
+});
+
+const createResidentAllocationSchema = t.Object({
+  roomId: t.String({ format: "uuid" }),
+  bedId: t.String({ format: "uuid" }),
+  allocationDate: t.String({ format: "date-time" }),
+  releaseDate: t.Optional(t.String({ format: "date-time" })),
+  status: t.Optional(allocationStatusSchema),
+  reason: t.Optional(t.String()),
+  notes: t.Optional(t.String()),
+});
+
+const updateResidentAllocationSchema = t.Object({
+  roomId: t.Optional(t.String({ format: "uuid" })),
+  bedId: t.Optional(t.String({ format: "uuid" })),
+  allocationDate: t.Optional(t.String({ format: "date-time" })),
+  releaseDate: t.Optional(t.String({ format: "date-time" })),
+  status: t.Optional(allocationStatusSchema),
+  reason: t.Optional(t.String()),
+  notes: t.Optional(t.String()),
+});
+
+const residentMedicalProfileSchema = t.Object({
+  id: t.String({ format: "uuid" }),
+  residentId: t.String({ format: "uuid" }),
+  bloodGroup: t.Nullable(t.String()),
+  genotype: t.Nullable(t.String()),
+  allergies: t.Nullable(t.String()),
+  chronicConditions: t.Nullable(t.String()),
+  currentDiagnoses: t.Nullable(t.String()),
+  dietaryNotes: t.Nullable(t.String()),
+  mobilityStatus: t.Union([mobilityStatusSchema, t.Null()]),
+  disabilityNotes: t.Nullable(t.String()),
+  mentalHealthNotes: t.Nullable(t.String()),
+  fallRiskNotes: t.Nullable(t.String()),
+  careNotes: t.Nullable(t.String()),
+  emergencyMedicalNotes: t.Nullable(t.String()),
+  primaryPhysicianName: t.Nullable(t.String()),
+  primaryPhysicianPhone: t.Nullable(t.String()),
+  insuranceProvider: t.Nullable(t.String()),
+  insuranceMemberNumber: t.Nullable(t.String()),
+  createdAt: t.Date(),
+  updatedAt: t.Date(),
+});
+
+const upsertResidentMedicalProfileSchema = t.Object({
+  bloodGroup: t.Optional(t.String({ minLength: 1, maxLength: 10 })),
+  genotype: t.Optional(t.String({ minLength: 1, maxLength: 10 })),
+  allergies: t.Optional(t.String()),
+  chronicConditions: t.Optional(t.String()),
+  currentDiagnoses: t.Optional(t.String()),
+  dietaryNotes: t.Optional(t.String()),
+  mobilityStatus: t.Optional(mobilityStatusSchema),
+  disabilityNotes: t.Optional(t.String()),
+  mentalHealthNotes: t.Optional(t.String()),
+  fallRiskNotes: t.Optional(t.String()),
+  careNotes: t.Optional(t.String()),
+  emergencyMedicalNotes: t.Optional(t.String()),
+  primaryPhysicianName: t.Optional(t.String({ minLength: 1, maxLength: 160 })),
+  primaryPhysicianPhone: t.Optional(t.String({ minLength: 1, maxLength: 40 })),
+  insuranceProvider: t.Optional(t.String({ minLength: 1, maxLength: 160 })),
+  insuranceMemberNumber: t.Optional(t.String({ minLength: 1, maxLength: 160 })),
 });
 
 const residentListResponseSchema = t.Object({
@@ -247,6 +475,27 @@ const residentAdmissionListResponseSchema = t.Object({
 const residentAdmissionRecordResponseSchema = t.Object({
   data: residentAdmissionSchema,
 });
+const roomListResponseSchema = t.Object({
+  data: t.Array(roomSchema),
+});
+const roomRecordResponseSchema = t.Object({
+  data: roomSchema,
+});
+const bedListResponseSchema = t.Object({
+  data: t.Array(bedSchema),
+});
+const bedRecordResponseSchema = t.Object({
+  data: bedSchema,
+});
+const residentAllocationListResponseSchema = t.Object({
+  data: t.Array(residentAllocationSchema),
+});
+const residentAllocationRecordResponseSchema = t.Object({
+  data: residentAllocationSchema,
+});
+const residentMedicalProfileRecordResponseSchema = t.Object({
+  data: residentMedicalProfileSchema,
+});
 
 const serializeResident = async (residentId: string) => {
   return db.query.residents.findFirst({
@@ -275,13 +524,16 @@ export const residentsApp = new Elysia({ prefix: "/api/admin/residents" })
     try {
       await requirePermission(request.headers, "residents.read");
       const filters = query;
+      const url = new URL(request.url);
+      const includeArchivedRequested = url.searchParams.get("includeArchived") === "true";
+      const hasStatusFilter = url.searchParams.has("status");
       const conditions = [];
 
-      if (!filters.includeArchived) {
+      if (!includeArchivedRequested) {
         conditions.push(eq(residents.isArchived, false));
       }
 
-      if (filters.status) {
+      if (hasStatusFilter && filters.status) {
         conditions.push(eq(residents.status, filters.status));
       }
 
@@ -379,11 +631,14 @@ export const residentsApp = new Elysia({ prefix: "/api/admin/residents" })
     try {
       const authContext = await requirePermission(request.headers, "residents.create");
       const parsed = body;
+      const { residentNumber, ...residentPayload } = parsed;
+      const generatedResidentNumber = residentNumber?.trim() || (await generateResidentNumber());
 
       const [created] = await db
         .insert(residents)
         .values({
-          ...parsed,
+          ...residentPayload,
+          residentNumber: generatedResidentNumber,
           createdBy: authContext.user.id,
           updatedBy: authContext.user.id,
         })
@@ -1031,6 +1286,633 @@ export const residentsApp = new Elysia({ prefix: "/api/admin/residents" })
       },
       response: {
         200: messageResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .get(
+    "/rooms",
+    async ({ request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.read");
+        const data = await db.query.rooms.findMany({
+          with: {
+            beds: true,
+          },
+          orderBy: [desc(rooms.createdAt)],
+        });
+        return { data };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+        set.status = 403;
+        return { message: "Insufficient permissions" };
+      }
+    },
+    {
+      detail: {
+        tags: ["Residents"],
+        summary: "List rooms",
+      },
+      response: {
+        200: t.Object({ data: t.Any() }),
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/rooms",
+    async ({ body, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.update");
+        const roomCode = body.code?.trim() || (await generateRoomCode());
+        const [created] = await db
+          .insert(rooms)
+          .values({
+            name: body.name,
+            code: roomCode,
+            floor: body.floor,
+            wing: body.wing,
+            roomType: body.roomType,
+            status: body.status ?? "available",
+            capacity: body.capacity,
+            notes: body.notes,
+          })
+          .returning();
+        set.status = 201;
+        return { data: created };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+        set.status = 500;
+        return { message: error instanceof Error ? error.message : "Failed to create room" };
+      }
+    },
+    {
+      body: createRoomSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Create room",
+      },
+      response: {
+        201: roomRecordResponseSchema,
+        400: validationErrorResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .patch(
+    "/rooms/:roomId",
+    async ({ params, body, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.update");
+        const existing = await db.query.rooms.findFirst({
+          where: eq(rooms.id, params.roomId),
+        });
+        if (!existing) {
+          set.status = 404;
+          return { message: "Room not found" };
+        }
+        await db
+          .update(rooms)
+          .set({
+            name: body.name ?? existing.name,
+            code: existing.code,
+            floor: body.floor ?? existing.floor,
+            wing: body.wing ?? existing.wing,
+            roomType: body.roomType ?? existing.roomType,
+            status: body.status ?? existing.status,
+            capacity: body.capacity ?? existing.capacity,
+            notes: body.notes ?? existing.notes,
+            updatedAt: new Date(),
+          })
+          .where(eq(rooms.id, params.roomId));
+        const updated = await db.query.rooms.findFirst({
+          where: eq(rooms.id, params.roomId),
+        });
+        if (!updated) {
+          set.status = 500;
+          return { message: "Failed to load updated room" };
+        }
+        return { data: updated };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+        set.status = 500;
+        return { message: error instanceof Error ? error.message : "Failed to update room" };
+      }
+    },
+    {
+      params: roomParamsSchema,
+      body: updateRoomSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Update room",
+      },
+      response: {
+        200: roomRecordResponseSchema,
+        400: validationErrorResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .get(
+    "/rooms/:roomId/beds",
+    async ({ params, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.read");
+        const room = await db.query.rooms.findFirst({
+          where: eq(rooms.id, params.roomId),
+        });
+        if (!room) {
+          set.status = 404;
+          return { message: "Room not found" };
+        }
+        const data = await db.query.beds.findMany({
+          where: eq(beds.roomId, params.roomId),
+          orderBy: [desc(beds.createdAt)],
+        });
+        return { data };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+        set.status = 403;
+        return { message: "Insufficient permissions" };
+      }
+    },
+    {
+      params: roomParamsSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "List beds for room",
+      },
+      response: {
+        200: bedListResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/rooms/:roomId/beds",
+    async ({ params, body, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.update");
+        const room = await db.query.rooms.findFirst({
+          where: eq(rooms.id, params.roomId),
+        });
+        if (!room) {
+          set.status = 404;
+          return { message: "Room not found" };
+        }
+        const bedCode = body.code?.trim() || (await generateBedCode());
+        const [created] = await db
+          .insert(beds)
+          .values({
+            roomId: params.roomId,
+            name: body.name,
+            code: bedCode,
+            status: body.status ?? "available",
+            notes: body.notes,
+          })
+          .returning();
+        set.status = 201;
+        return { data: created };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+        set.status = 500;
+        return { message: error instanceof Error ? error.message : "Failed to create bed" };
+      }
+    },
+    {
+      params: roomParamsSchema,
+      body: createBedSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Create bed in room",
+      },
+      response: {
+        201: bedRecordResponseSchema,
+        400: validationErrorResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .patch(
+    "/beds/:bedId",
+    async ({ params, body, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.update");
+        const existing = await db.query.beds.findFirst({
+          where: eq(beds.id, params.bedId),
+        });
+        if (!existing) {
+          set.status = 404;
+          return { message: "Bed not found" };
+        }
+        await db
+          .update(beds)
+          .set({
+            name: body.name ?? existing.name,
+            code: existing.code,
+            status: body.status ?? existing.status,
+            notes: body.notes ?? existing.notes,
+            updatedAt: new Date(),
+          })
+          .where(eq(beds.id, params.bedId));
+        const updated = await db.query.beds.findFirst({
+          where: eq(beds.id, params.bedId),
+        });
+        if (!updated) {
+          set.status = 500;
+          return { message: "Failed to load updated bed" };
+        }
+        return { data: updated };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+        set.status = 500;
+        return { message: error instanceof Error ? error.message : "Failed to update bed" };
+      }
+    },
+    {
+      params: bedParamsSchema,
+      body: updateBedSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Update bed",
+      },
+      response: {
+        200: bedRecordResponseSchema,
+        400: validationErrorResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .get(
+    "/:id/allocations",
+    async ({ params, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.read");
+        const resident = await db.query.residents.findFirst({
+          where: eq(residents.id, params.id),
+        });
+        if (!resident) {
+          set.status = 404;
+          return { message: "Resident not found" };
+        }
+        const data = await db.query.residentRoomAllocations.findMany({
+          where: eq(residentRoomAllocations.residentId, params.id),
+          with: {
+            room: true,
+            bed: true,
+          },
+          orderBy: [desc(residentRoomAllocations.allocationDate)],
+        });
+        return { data };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+        set.status = 403;
+        return { message: "Insufficient permissions" };
+      }
+    },
+    {
+      params: residentParamsSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "List resident room allocations",
+      },
+      response: {
+        200: t.Object({ data: t.Any() }),
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+      },
+    },
+  )
+  .post(
+    "/:id/allocations",
+    async ({ params, body, request, set }) => {
+      try {
+        const authContext = await requirePermission(request.headers, "residents.update");
+        const resident = await db.query.residents.findFirst({
+          where: eq(residents.id, params.id),
+        });
+        if (!resident) {
+          set.status = 404;
+          return { message: "Resident not found" };
+        }
+        const room = await db.query.rooms.findFirst({
+          where: eq(rooms.id, body.roomId),
+        });
+        if (!room) {
+          set.status = 404;
+          return { message: "Room not found" };
+        }
+        const bed = await db.query.beds.findFirst({
+          where: eq(beds.id, body.bedId),
+        });
+        if (!bed || bed.roomId !== body.roomId) {
+          set.status = 400;
+          return { message: "Bed does not belong to the selected room" };
+        }
+        const activeResidentAllocation = await db.query.residentRoomAllocations.findFirst({
+          where: and(
+            eq(residentRoomAllocations.residentId, params.id),
+            eq(residentRoomAllocations.status, "active"),
+          ),
+        });
+        if (activeResidentAllocation) {
+          set.status = 409;
+          return { message: "Resident already has an active room allocation" };
+        }
+        const activeBedAllocation = await db.query.residentRoomAllocations.findFirst({
+          where: and(
+            eq(residentRoomAllocations.bedId, body.bedId),
+            eq(residentRoomAllocations.status, "active"),
+          ),
+        });
+        if (activeBedAllocation) {
+          set.status = 409;
+          return { message: "Selected bed is already assigned" };
+        }
+        const [created] = await db
+          .insert(residentRoomAllocations)
+          .values({
+            residentId: params.id,
+            roomId: body.roomId,
+            bedId: body.bedId,
+            allocationDate: new Date(body.allocationDate),
+            releaseDate: body.releaseDate ? new Date(body.releaseDate) : null,
+            status: body.status ?? "active",
+            reason: body.reason,
+            notes: body.notes,
+            assignedBy: authContext.user.id,
+          })
+          .returning();
+        set.status = 201;
+        return { data: created };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+        set.status = 500;
+        return { message: error instanceof Error ? error.message : "Failed to create allocation" };
+      }
+    },
+    {
+      params: residentParamsSchema,
+      body: createResidentAllocationSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Create room allocation for resident",
+      },
+      response: {
+        201: residentAllocationRecordResponseSchema,
+        400: validationErrorResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        409: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .patch(
+    "/:id/allocations/:allocationId",
+    async ({ params, body, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.update");
+        const existing = await db.query.residentRoomAllocations.findFirst({
+          where: and(
+            eq(residentRoomAllocations.id, params.allocationId),
+            eq(residentRoomAllocations.residentId, params.id),
+          ),
+        });
+        if (!existing) {
+          set.status = 404;
+          return { message: "Resident allocation not found" };
+        }
+        const nextRoomId = body.roomId ?? existing.roomId;
+        const nextBedId = body.bedId ?? existing.bedId;
+        if (body.roomId || body.bedId) {
+          const bed = await db.query.beds.findFirst({
+            where: eq(beds.id, nextBedId),
+          });
+          if (!bed || bed.roomId !== nextRoomId) {
+            set.status = 400;
+            return { message: "Bed does not belong to the selected room" };
+          }
+        }
+        await db
+          .update(residentRoomAllocations)
+          .set({
+            roomId: nextRoomId,
+            bedId: nextBedId,
+            allocationDate: body.allocationDate
+              ? new Date(body.allocationDate)
+              : existing.allocationDate,
+            releaseDate: body.releaseDate ? new Date(body.releaseDate) : existing.releaseDate,
+            status: body.status ?? existing.status,
+            reason: body.reason ?? existing.reason,
+            notes: body.notes ?? existing.notes,
+            updatedAt: new Date(),
+          })
+          .where(eq(residentRoomAllocations.id, params.allocationId));
+        const updated = await db.query.residentRoomAllocations.findFirst({
+          where: eq(residentRoomAllocations.id, params.allocationId),
+        });
+        if (!updated) {
+          set.status = 500;
+          return { message: "Failed to load updated allocation" };
+        }
+        return { data: updated };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+        set.status = 500;
+        return { message: error instanceof Error ? error.message : "Failed to update allocation" };
+      }
+    },
+    {
+      params: residentAllocationParamsSchema,
+      body: updateResidentAllocationSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Update resident room allocation",
+      },
+      response: {
+        200: residentAllocationRecordResponseSchema,
+        400: validationErrorResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+        500: messageResponseSchema,
+      },
+    },
+  )
+  .get(
+    "/:id/medical-profile",
+    async ({ params, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.read");
+        const resident = await db.query.residents.findFirst({
+          where: eq(residents.id, params.id),
+        });
+        if (!resident) {
+          set.status = 404;
+          return { message: "Resident not found" };
+        }
+        const profile = await db.query.residentMedicalProfiles.findFirst({
+          where: eq(residentMedicalProfiles.residentId, params.id),
+        });
+        if (!profile) {
+          set.status = 404;
+          return { message: "Resident medical profile not found" };
+        }
+        return { data: profile };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+        set.status = 403;
+        return { message: "Insufficient permissions" };
+      }
+    },
+    {
+      params: residentParamsSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Get resident medical profile",
+      },
+      response: {
+        200: residentMedicalProfileRecordResponseSchema,
+        401: messageResponseSchema,
+        403: messageResponseSchema,
+        404: messageResponseSchema,
+      },
+    },
+  )
+  .put(
+    "/:id/medical-profile",
+    async ({ params, body, request, set }) => {
+      try {
+        await requirePermission(request.headers, "residents.update");
+        const resident = await db.query.residents.findFirst({
+          where: eq(residents.id, params.id),
+        });
+        if (!resident) {
+          set.status = 404;
+          return { message: "Resident not found" };
+        }
+        const existing = await db.query.residentMedicalProfiles.findFirst({
+          where: eq(residentMedicalProfiles.residentId, params.id),
+        });
+        if (existing) {
+          await db
+            .update(residentMedicalProfiles)
+            .set({
+              ...body,
+              updatedAt: new Date(),
+            })
+            .where(eq(residentMedicalProfiles.residentId, params.id));
+        } else {
+          await db.insert(residentMedicalProfiles).values({
+            residentId: params.id,
+            ...body,
+          });
+        }
+        const profile = await db.query.residentMedicalProfiles.findFirst({
+          where: eq(residentMedicalProfiles.residentId, params.id),
+        });
+        if (!profile) {
+          set.status = 500;
+          return { message: "Failed to load medical profile" };
+        }
+        return { data: profile };
+      } catch (error) {
+        if (error instanceof Error && error.message === "UNAUTHORIZED") {
+          set.status = 401;
+          return { message: "Authentication required" };
+        }
+        if (error instanceof Error && error.message === "FORBIDDEN") {
+          set.status = 403;
+          return { message: "Insufficient permissions" };
+        }
+        set.status = 500;
+        return { message: error instanceof Error ? error.message : "Failed to save medical profile" };
+      }
+    },
+    {
+      params: residentParamsSchema,
+      body: upsertResidentMedicalProfileSchema,
+      detail: {
+        tags: ["Residents"],
+        summary: "Create or update resident medical profile",
+      },
+      response: {
+        200: residentMedicalProfileRecordResponseSchema,
+        400: validationErrorResponseSchema,
         401: messageResponseSchema,
         403: messageResponseSchema,
         404: messageResponseSchema,

@@ -188,6 +188,26 @@ const reviewListResponseSchema = t.Object({
   data: t.Array(staffReviewSchema),
 });
 
+const generateEmployeeId = async () => {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const year = new Date().getFullYear().toString().slice(-2);
+    const randomChunk = Math.floor(Math.random() * 900000 + 100000).toString();
+    const candidate = `AHS-${year}${randomChunk}`;
+    const exists = await db.query.userProfiles.findFirst({
+      where: eq(userProfiles.employeeId, candidate),
+      columns: {
+        id: true,
+      },
+    });
+
+    if (!exists) {
+      return candidate;
+    }
+  }
+
+  return `AHS-${crypto.randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
+};
+
 const serializeStaff = async (userId: string) => {
   const record = await db.query.user.findFirst({
     where: and(eq(user.id, userId), eq(user.userType, "staff")),
@@ -408,9 +428,11 @@ export const staffApp = new Elysia({ prefix: "/api/admin/staff" })
           return { message: "Failed to create staff user" };
         }
 
+        const employeeId = await generateEmployeeId();
+
         await db.insert(userProfiles).values({
           userId: created.user.id,
-          employeeId: body.employeeId,
+          employeeId,
           jobTitle: body.jobTitle,
           department: body.department,
           address: body.address,

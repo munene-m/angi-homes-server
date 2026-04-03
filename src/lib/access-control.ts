@@ -184,6 +184,21 @@ const SYSTEM_ROLES = [
       "visits.update",
     ],
   },
+  {
+    name: "Care Staff",
+    code: "care_staff",
+    description: "Resident-facing operational access for care staff",
+    permissions: [
+      "residents.read",
+      "residents.update",
+      "appointments.read",
+      "appointments.create",
+      "appointments.update",
+      "visits.read",
+      "visits.create",
+      "visits.update",
+    ],
+  },
 ] as const;
 
 export type SessionUser = {
