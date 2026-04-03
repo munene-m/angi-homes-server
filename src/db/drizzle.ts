@@ -6,12 +6,11 @@ import config from "../config";
 console.log("🌦️ 🚀 Connecting to database with drizzle...");
 const pool = new Pool({
   connectionString: config.databaseUrl,
-  ssl:
-    config.nodeEnv === "production"
-      ? {
-        rejectUnauthorized: true
+  ssl: config.databaseSslEnabled
+    ? {
+        rejectUnauthorized: config.databaseSslRejectUnauthorized,
       }
-      : undefined,
+    : undefined,
 });
 
 export const drizzleConnect = async (): Promise<void> => {
