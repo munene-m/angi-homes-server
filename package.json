@@ -4,6 +4,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "bun run --watch src/index.ts",
+    "build": "bunx tsc --noEmit",
     "start": "bun run src/index.ts",
     "start:prod": "NODE_ENV=production bun run src/index.ts",
     "test:watch": "bun test --watch",
