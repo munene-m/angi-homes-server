@@ -20,6 +20,10 @@ export default {
   },
   betterAuth: {
     url: process.env.BETTER_AUTH_URL || `http://localhost:${process.env.PORT || "5001"}`,
-    secret: process.env.BETTER_AUTH_SECRET!
+    secret: process.env.BETTER_AUTH_SECRET!,
+    trustedOrigins: (process.env.BETTER_AUTH_TRUSTED_ORIGINS || "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
   }
 };
