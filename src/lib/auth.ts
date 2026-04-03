@@ -13,11 +13,47 @@ export const auth = betterAuth({
   ],
   baseURL: config.betterAuth.url,
   secret: config.betterAuth.secret,
-  useSecureCookies: true,
-  defaultCookieAttributes: {
-    sameSite: "none",
-    secure: true,
-    httpOnly: true,
+  advanced: {
+    useSecureCookies: true,
+    defaultCookieAttributes: {
+      sameSite: "none",
+      secure: true,
+      httpOnly: true,
+    },
+    cookies: {
+      session_token: {
+        attributes: {
+          sameSite: "none",
+          secure: true,
+          httpOnly: true,
+          path: "/",
+        },
+      },
+      session_data: {
+        attributes: {
+          sameSite: "none",
+          secure: true,
+          httpOnly: true,
+          path: "/",
+        },
+      },
+      dont_remember: {
+        attributes: {
+          sameSite: "none",
+          secure: true,
+          httpOnly: true,
+          path: "/",
+        },
+      },
+      account_data: {
+        attributes: {
+          sameSite: "none",
+          secure: true,
+          httpOnly: true,
+          path: "/",
+        },
+      },
+    },
   },
   database: drizzleAdapter(db,{
     provider: "pg"
