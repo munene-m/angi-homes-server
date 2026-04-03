@@ -1,4 +1,5 @@
 import { Elysia, Context } from "elysia";
+import { cors } from "@elysiajs/cors";
 import config from "./config";
 import { drizzleConnect } from "./db/drizzle";
 import { ensureAccessControlSeed } from "./lib/access-control";
@@ -24,7 +25,38 @@ const startServer = async () => {
   await drizzleConnect()
   await ensureAccessControlSeed()
 
+  const allowedOrigins = new Set([
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8788",
+    "https://angi-homes-admin.pages.dev",
+    config.betterAuth.url,
+    ...config.cors.allowedOrigins,
+  ])
+
   const app = new Elysia()
+    .use(
+      cors({
+        origin: (request: Request) => {
+          const origin = request.headers.get("origin")
+
+          if (!origin) {
+            return false
+          }
+
+          return allowedOrigins.has(origin)
+        },
+        credentials: true,
+        allowedHeaders: [
+          "Content-Type",
+          "Authorization",
+          "Origin",
+          "Accept",
+          "Cookie",
+        ],
+        methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+      })
+    )
     .use(
       openapi({
         references: fromTypes(),
